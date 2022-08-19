@@ -21,10 +21,10 @@ class Artist(models.Model):
         super(Artist, self).save(*args, **kwargs)
 
 class MusicVideo(models.Model):
-    artist = models.PositiveIntegerField()
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
-    content_object = GenericForeignKey('content_type', 'artist')
-
+    # artist = models.PositiveIntegerField()
+    # content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    # content_object = GenericForeignKey('content_type', 'artist')
+    artist = models.ForeignKey(Artist, on_delete=models.CASCADE)
     title = models.CharField(max_length=255)
     slug = models.SlugField(null=True, blank=True, unique=True)
     release_year = models.CharField(max_length=255)
