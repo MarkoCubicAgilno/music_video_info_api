@@ -1,5 +1,5 @@
 from rest_framework import serializers, validators
-from .models import Artist, Rating, MusicVideo, UserVideoList
+from .models import Artist, Rating, MusicVideo, Review, UserVideoList
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.models import User
 
@@ -8,9 +8,9 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
-
         # Custom claims
         token['username'] = user.username
+        token['is_staff'] = user.is_staff
 
         return token
 
@@ -27,7 +27,7 @@ class UserSerializer(serializers.ModelSerializer):
                 "allow_blank": False,
                 "validators": [
                     validators.UniqueValidator(
-                        User.objects.all(), "A user with that Email already exists"
+                        User.objects.all(), "A user with that email already exists"
                     )
                 ]
             }
@@ -48,7 +48,6 @@ class ArtistSerializer(serializers.ModelSerializer):
                   'description', 'birth', 'slug')
 
     def create(self, validated_data):
-        print('validated_data: ', validated_data)
         artist = super().create(validated_data)
         artist.save()
         return artist
@@ -60,7 +59,7 @@ class MusicVideoSerializer(serializers.ModelSerializer):
     class Meta:
         model = MusicVideo
         fields = ('id', 'artist', 'title', 'slug', 'release_year', 'album', 'image',
-                  'yt_embedded', 'rate_score', 'votes_number', 'duration', 'genre')
+                  'yt_embedded', 'rate_score', 'votes_number', 'duration', 'song_description')
 
     def create(self, validated_data):
         validated_data['artist'] = Artist.objects.get(
@@ -81,7 +80,8 @@ class RatingSerializer(serializers.ModelSerializer):
         }
 
     def create(self, validated_data):
-        validated_data['musicVideo'] = MusicVideo.objects.get(id=self.context['musicVideo_id'])
+        validated_data['musicVideo'] = MusicVideo.objects.get(
+            id=self.context['musicVideo_id'])
         return super().create(validated_data)
 
 
@@ -92,7 +92,20 @@ class UserVideoListSerializer(serializers.ModelSerializer):
         model = UserVideoList
         fields = '__all__'
 
+
 class UserVideoListCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserVideoList
         fields = '__all__'
+
+
+class ReviewSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+    class Meta:
+        model = Review
+        fields = ('id', 'title', 'text', 'musicVideo', 'date_created', 'date_updated',
+                  'user')
+
+    def create(self, validated_data):
+        validated_data['user'] = User.objects.get(id=self.context['user'])
+        return super().create(validated_data)

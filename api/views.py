@@ -1,17 +1,12 @@
-from math import radians
-from os import stat
 from rest_framework import generics, status
-from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from uritemplate import partial
-from api.models import Artist, Rating, MusicVideo, UserVideoList
+from api.models import Artist, Rating, MusicVideo, Review, UserVideoList
 from django.contrib.auth.models import User
-from api.serializers import ArtistSerializer, MusicVideoSerializer, MyTokenObtainPairSerializer, UserSerializer, RatingSerializer, UserVideoListCreateSerializer, UserVideoListSerializer
+from api.serializers import ArtistSerializer, MusicVideoSerializer, MyTokenObtainPairSerializer, ReviewSerializer, UserSerializer, RatingSerializer, UserVideoListCreateSerializer, UserVideoListSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.http import Http404
-from itertools import chain
-from collections import OrderedDict
+from django.db.models import Avg
 
 
 class MyTokenObtainPairView(TokenObtainPairView):
@@ -58,11 +53,10 @@ class RatingListView(APIView):
         except Rating.DoesNotExist:
             raise Http404
 
-    def get(self, request, user_id=None, musicVideo_id=None, pk=None, musicVideo_slug=None):
+    def get(self, request, user_id=None, musicVideo_slug=None, rating=None, order=None):
         if (user_id and musicVideo_slug):
             try:
                 music_video = MusicVideo.objects.get(slug=musicVideo_slug)
-                print('music_video: ', music_video.id)
 
             except MusicVideo.DoesNotExist:
                 ratings = None
@@ -75,12 +69,20 @@ class RatingListView(APIView):
                 ratings = None
                 return Response({'status': 'error', 'message': 'Rating does not exist'}, status=status.HTTP_400_BAD_REQUEST)
 
-            print('ratings: ', ratings)
             serializer = RatingSerializer(ratings)
 
         elif (user_id):
             ratings = Rating.objects.all().filter(user_id=user_id)
-            serializer = RatingSerializer(ratings, many=True)
+            if (rating):
+                ratings = ratings.filter(rating=rating)
+            if (order):
+                if order == 'date':
+                    ratings = ratings.order_by('-date')
+
+                elif order == 'top':
+                    ratings = ratings.order_by('-rating')
+
+                serializer = RatingSerializer(ratings, many=True)
 
         else:
             ratings = Rating.objects.all()
@@ -93,6 +95,14 @@ class RatingListView(APIView):
                                       'musicVideo_id': request.data['musicVideo']})
         if serializer.is_valid():
             serializer.save()
+
+            ratings = Rating.objects.filter(
+                musicVideo_id=request.data['musicVideo']).aggregate(Avg('rating'))
+            music_video = MusicVideo.objects.get(id=request.data['musicVideo'])
+            music_video.votes_number = music_video.votes_number + 1
+            music_video.rate_score = ratings['rating__avg']
+            music_video.save()
+
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -101,12 +111,27 @@ class RatingListView(APIView):
         serializer = RatingSerializer(rating, data=request.data)
         if serializer.is_valid():
             serializer.save()
+
+            ratings = Rating.objects.filter(
+                musicVideo_id=rating.musicVideo.id).aggregate(Avg('rating'))
+            music_video = MusicVideo.objects.get(id=rating.musicVideo.id)
+            music_video.rate_score = ratings['rating__avg']
+            music_video.save()
+
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk):
         snippet = self.get_object(pk)
         snippet.delete()
+
+        ratings = Rating.objects.filter(
+            musicVideo_id=snippet.musicVideo.id).aggregate(Avg('rating'))
+        music_video = MusicVideo.objects.get(id=snippet.musicVideo.id)
+        music_video.votes_number = music_video.votes_number - 1
+        music_video.rate_score = ratings['rating__avg']
+        music_video.save()
+
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -138,6 +163,15 @@ class MusicVideoView(generics.ListAPIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    def put(self, request, slug):
+        video = MusicVideo.objects.get(slug=slug)
+        serializer = self.serializer_class(
+            video, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class UserVideoListView(APIView):
     serializer_class = UserVideoListSerializer
@@ -153,16 +187,16 @@ class UserVideoListView(APIView):
             user_video_list = UserVideoList.objects.get(slug=slug)
             serializer = self.serializer_class(user_video_list)
             return Response(serializer.data, status=status.HTTP_200_OK)
-        
+
         else:
             return Response(status=status.HTTP_204_NO_CONTENT)
 
     def post(self, request, slug=None, music_video_id=None):
         if slug and music_video_id:
-          user_list = UserVideoList.objects.get(slug=slug)
-          music_video = MusicVideo.objects.get(id=music_video_id)
-          user_list.musicVideos.add(music_video)
-          return Response({'message': 'Successfully added music video to list'}, status=status.HTTP_201_CREATED)
+            user_list = UserVideoList.objects.get(slug=slug)
+            music_video = MusicVideo.objects.get(id=music_video_id)
+            user_list.musicVideos.add(music_video)
+            return Response({'message': 'Successfully added music video to list'}, status=status.HTTP_201_CREATED)
 
         serializer = self.serializer_create_class(data=request.data)
         if serializer.is_valid():
@@ -171,8 +205,9 @@ class UserVideoListView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def put(self, request, slug):
-        rating = UserVideoList.objects.get(slug=slug)
-        serializer = self.serializer_class(rating, data=request.data, partial=True)
+        list = UserVideoList.objects.get(slug=slug)
+        serializer = self.serializer_create_class(
+            list, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
@@ -189,11 +224,21 @@ class UserVideoListView(APIView):
         snippet.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-class SearchView(APIView):
+
+class SearchMusicVideoView(APIView):
     def post(self, request):
         music_video = MusicVideo.objects.filter(
             title__icontains=request.data['parameter'])
         serializer = MusicVideoSerializer(music_video, many=True)
+
+        return Response(serializer.data)
+
+
+class SearchArtistView(APIView):
+    def post(self, request):
+        artist = Artist.objects.filter(
+            name__icontains=request.data['parameter'])
+        serializer = ArtistSerializer(artist, many=True)
 
         return Response(serializer.data)
 
@@ -205,3 +250,41 @@ class VideographyView(APIView):
         serializer = MusicVideoSerializer(music_videos, many=True)
 
         return Response(serializer.data)
+
+
+class ReviewView(APIView):
+    reviews = Review.objects.all()
+    serializer_class = ReviewSerializer
+
+    def get(self, request, slug=None):
+        if slug:
+            try:
+                music_video = MusicVideo.objects.get(slug=slug)
+                filtered_reviews = Review.objects.filter(
+                    musicVideo_id=music_video.id)
+                serializer = self.serializer_class(filtered_reviews, many=True)
+
+            except MusicVideo.DoesNotExist:
+                return Response({'status': 'error', 'message': 'Music Video does not exist'}, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        serializer = self.serializer_class(self.reviews, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data, context={
+                                           'user': request.data['user']})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def put(self, request, pk):
+        review = Review.objects.get(id=pk)
+        serializer = self.serializer_class(
+            review, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

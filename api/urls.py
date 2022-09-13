@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import ArtistView, RegisterView, RatingListView, MusicVideoView, SearchView, UserVideoListView, VideographyView
+from .views import ArtistView, RegisterView, RatingListView, MusicVideoView, ReviewView, SearchArtistView, SearchMusicVideoView, UserVideoListView, VideographyView
 from .views import MyTokenObtainPairView
 from rest_framework_simplejwt.views import (
     TokenRefreshView,
@@ -14,6 +14,7 @@ urlpatterns = [
     path('rating/', RatingListView.as_view()),
     path('rating-update/<int:pk>/', RatingListView.as_view()),
     path('rating/<int:user_id>/', RatingListView.as_view()),
+    path('rating/<int:user_id>/<int:rating>/<str:order>/', RatingListView.as_view()),
     path('rating/<int:user_id>/<slug:musicVideo_slug>/', RatingListView.as_view()),
     path('music-video/', MusicVideoView.as_view()),
     path('music-video/<slug:slug>/', MusicVideoView.as_view()),
@@ -21,6 +22,10 @@ urlpatterns = [
     path('video-lists/<int:user_id>/', UserVideoListView.as_view()),
     path('video-lists/<slug:slug>/', UserVideoListView.as_view()),
     path('video-lists/<slug:slug>/<int:music_video_id>/', UserVideoListView.as_view()),
-    path('search/', SearchView.as_view()),
+    path('search/', SearchMusicVideoView.as_view()),
+    path('search-artist/', SearchArtistView.as_view()),
     path('videography/<slug:slug>/', VideographyView.as_view()),
+    path('review/', ReviewView.as_view()),
+    path('review/<int:pk>/', ReviewView.as_view()),
+    path('review/<slug:slug>/', ReviewView.as_view()),
 ]
