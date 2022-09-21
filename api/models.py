@@ -19,7 +19,7 @@ class Artist(models.Model):
 
 class MusicVideo(models.Model):
     artist = models.ForeignKey(Artist, on_delete=models.CASCADE)
-    title = models.CharField(max_length=255)
+    title = models.CharField(max_length=255, unique=True)
     slug = models.SlugField(null=True, blank=True, unique=True)
     release_year = models.CharField(max_length=255)
     album = models.CharField(max_length=255)
